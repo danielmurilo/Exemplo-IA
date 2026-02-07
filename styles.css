@@ -1,0 +1,15 @@
+body {
+  min-height: 100vh;
+}
+
+#expensesTable tbody tr td {
+  vertical-align: middle;
+}
+
+#toastContainer .toast {
+  min-width: 280px;
+}
+
+textarea#pasteInput {
+  font-family: "Fira Code", "Courier New", monospace;
+}
