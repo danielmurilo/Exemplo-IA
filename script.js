@@ -64,13 +64,7 @@ function parseSpreadsheet(raw) {
       return;
     }
 
-    if (isHeaderLine(parts)) {
-      return;
-    }
-
-    const date = parts[0];
-    const description = parts[1];
-    const valueRaw = findValueColumn(parts);
+    const [date, description, categoryRaw, valueRaw] = normalizeColumns(parts);
 
     if (!date || !description || !valueRaw) {
       ignored += 1;
@@ -83,7 +77,6 @@ function parseSpreadsheet(raw) {
       return;
     }
 
-    const categoryRaw = parts[2] && parts[2] !== valueRaw ? parts[2] : "";
     const category = categoryRaw || inferCategory(description);
 
     entries.push({
@@ -104,24 +97,11 @@ function detectDelimiter(line) {
   return semicolons > commas ? ";" : ",";
 }
 
-function isHeaderLine(parts) {
-  const header = parts.join(" ").toLowerCase();
-  return header.includes("data") && header.includes("descr") && header.includes("valor");
-}
-
-function findValueColumn(parts) {
-  const candidates = parts.slice(2).filter(Boolean);
-  for (let index = candidates.length - 1; index >= 0; index -= 1) {
-    const value = candidates[index];
-    if (isNumericValue(value)) {
-      return value;
-    }
+function normalizeColumns(parts) {
+  if (parts.length === 3) {
+    return [parts[0], parts[1], "", parts[2]];
   }
-  return "";
-}
-
-function isNumericValue(value) {
-  return /-?\d/.test(value);
+  return [parts[0], parts[1], parts[2], parts[3]];
 }
 
 function parseCurrency(valueRaw) {
