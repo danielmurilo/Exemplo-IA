@@ -59,25 +59,25 @@ function parseSpreadsheet(raw) {
     const delimiter = detectDelimiter(line);
     const parts = line.split(delimiter).map((item) => item.trim());
 
-    if (parts.length === 0) {
+    if (parts.length < 3) {
       ignored += 1;
       return;
     }
 
-    if (isHeaderLine(parts)) {
-      return;
-    }
+    const [date, description, categoryRaw, valueRaw] = normalizeColumns(parts);
 
-    const date = findDateColumn(parts) || "Sem data";
-    const valueRaw = findValueColumn(parts);
-    const value = valueRaw ? parseCurrency(valueRaw) : 0;
-    if (valueRaw && Number.isNaN(value)) {
+    if (!date || !description || !valueRaw) {
       ignored += 1;
       return;
     }
 
-    const description = findDescription(parts, date, valueRaw) || "Sem descrição";
-    const category = inferCategory(description);
+    const value = parseCurrency(valueRaw);
+    if (Number.isNaN(value)) {
+      ignored += 1;
+      return;
+    }
+
+    const category = categoryRaw || inferCategory(description);
 
     entries.push({
       date,
@@ -97,68 +97,11 @@ function detectDelimiter(line) {
   return semicolons > commas ? ";" : ",";
 }
 
-function isHeaderLine(parts) {
-  const header = parts.join(" ").toLowerCase();
-  return (
-    header.includes("data") &&
-    (header.includes("descr") || header.includes("hist")) &&
-    header.includes("valor")
-  );
-}
-
-function findDateColumn(parts) {
-  const dateRegexes = [
-    /\b\d{2}[/-]\d{2}[/-]\d{2,4}\b/,
-    /\b\d{4}[/-]\d{2}[/-]\d{2}\b/,
-  ];
-  for (const part of parts) {
-    const match = dateRegexes.find((regex) => regex.test(part));
-    if (match) {
-      return normalizeDate(part);
-    }
+function normalizeColumns(parts) {
+  if (parts.length === 3) {
+    return [parts[0], parts[1], "", parts[2]];
   }
-  return "";
-}
-
-function normalizeDate(raw) {
-  const cleaned = raw.trim();
-  const isoMatch = cleaned.match(/\b(\d{4})[/-](\d{2})[/-](\d{2})\b/);
-  if (isoMatch) {
-    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-  }
-  const brMatch = cleaned.match(/\b(\d{2})[/-](\d{2})[/-](\d{2,4})\b/);
-  if (brMatch) {
-    const year = brMatch[3].length === 2 ? `20${brMatch[3]}` : brMatch[3];
-    return `${brMatch[1]}/${brMatch[2]}/${year}`;
-  }
-  return cleaned;
-}
-
-function findValueColumn(parts) {
-  const candidates = parts.filter(Boolean);
-  for (let index = candidates.length - 1; index >= 0; index -= 1) {
-    const value = candidates[index];
-    if (isNumericValue(value)) {
-      return value;
-    }
-  }
-  return "";
-}
-
-function isNumericValue(value) {
-  return /-?\d/.test(value);
-}
-
-function findDescription(parts, dateValue, valueRaw) {
-  const valueSet = new Set([dateValue, valueRaw].filter(Boolean));
-  const candidates = parts.filter(
-    (part) => part && !valueSet.has(part) && !isNumericValue(part) && !isDateValue(part)
-  );
-  return candidates[0] || "";
-}
-
-function isDateValue(part) {
-  return /\b\d{2}[/-]\d{2}[/-]\d{2,4}\b/.test(part) || /\b\d{4}[/-]\d{2}[/-]\d{2}\b/.test(part);
+  return [parts[0], parts[1], parts[2], parts[3]];
 }
 
 function parseCurrency(valueRaw) {
