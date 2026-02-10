@@ -2,15 +2,13 @@ const STORAGE_KEY = "gastosPessoais";
 
 const pasteInput = document.getElementById("pasteInput");
 const processButton = document.getElementById("processButton");
+const exportButton = document.getElementById("exportButton");
 const clearButton = document.getElementById("clearButton");
 const confirmClear = document.getElementById("confirmClear");
 const expensesTableBody = document.querySelector("#expensesTable tbody");
 const totalValue = document.getElementById("totalValue");
 const toastContainer = document.getElementById("toastContainer");
 const confirmModal = new bootstrap.Modal(document.getElementById("confirmModal"));
-
-let expenses = loadExpenses();
-renderTable();
 
 processButton.addEventListener("click", () => {
   const raw = pasteInput.value.trim();
@@ -32,6 +30,15 @@ processButton.addEventListener("click", () => {
 
   const ignoredText = ignored > 0 ? ` (${ignored} linha(s) ignoradas)` : "";
   showToast(`Importação concluída com sucesso!${ignoredText}`, "success");
+});
+
+exportButton.addEventListener("click", () => {
+  if (expenses.length === 0) {
+    showToast("Não há dados para exportar.", "warning");
+    return;
+  }
+  const csvContent = generateCSV();
+  downloadCSV(csvContent);
 });
 
 clearButton.addEventListener("click", () => {
@@ -77,7 +84,7 @@ function parseSpreadsheet(raw) {
     }
 
     // 2. Smart Field Extraction
-    const { date, value, description, category } = extractFieldsSmart(parts);
+    const { date, value, description, category, type } = extractFieldsSmart(parts);
 
     if (!date || !description || isNaN(value)) {
       ignored++;
@@ -88,6 +95,7 @@ function parseSpreadsheet(raw) {
       date,
       description,
       category,
+      type,
       value,
     });
   });
@@ -145,9 +153,18 @@ function extractFieldsSmart(parts) {
   }
 
   // Always infer category from the full description + value
-  const category = inferCategory(description, value);
+  const classification = inferCategory(description, value);
+  const category = classification.category;
+  const type = classification.type;
 
-  return { date, value, description, category };
+  // Adjust value sign based on type
+  if (type === 'expense') {
+    value = -Math.abs(value);
+  } else {
+    value = Math.abs(value);
+  }
+
+  return { date, value, description, category, type };
 }
 
 function parseCurrency(valueRaw) {
@@ -207,127 +224,126 @@ function parseCurrency(valueRaw) {
 class SmartClassifier {
   constructor() {
     this.dataset = [
-      // --- DESPESAS ---
+      // --- DESPESAS (type: 'expense') ---
 
       // Viagem por App
-      { terms: ["uber", "99", "99pop", "cabify", "indriver"], category: "Viagem por App" },
+      { terms: ["uber", "99", "99pop", "cabify", "indriver"], category: "Viagem por App", type: "expense" },
 
       // Transporte Público
-      { terms: ["ônibus", "metro", "metrô", "trem", "passagem", "bilhete", "cptm", "sptrans", "top"], category: "Transporte Público" },
+      { terms: ["ônibus", "metro", "metrô", "trem", "passagem", "bilhete", "cptm", "sptrans", "top"], category: "Transporte Público", type: "expense" },
 
       // Combustível
-      { terms: ["posto", "gasolina", "etanol", "combustível", "ipiranga", "shell", "br", "abastecimento", "petrobras"], category: "Combustível" },
+      { terms: ["posto", "gasolina", "etanol", "combustível", "ipiranga", "shell", "br", "abastecimento", "petrobras"], category: "Combustível", type: "expense" },
 
       // Manutenção Veicular
-      { terms: ["mecânico", "oficina", "revisão", "pneu", "peças", "troca de óleo", "balanceamento", "funilaria", "bateria"], category: "Manutenção Veicular" },
+      { terms: ["mecânico", "oficina", "revisão", "pneu", "peças", "troca de óleo", "balanceamento", "funilaria", "bateria"], category: "Manutenção Veicular", type: "expense" },
 
       // Supermercado
-      { terms: ["mercado", "supermercado", "hipermercado", "atacadao", "assai", "carrefour", "pão de açúcar", "dia", "extra", "sonda", "zaffari", "mambo", "tenda", "sams club"], category: "Supermercado" },
+      { terms: ["mercado", "supermercado", "hipermercado", "atacadao", "assai", "carrefour", "pão de açúcar", "dia", "extra", "sonda", "zaffari", "mambo", "tenda", "sams club"], category: "Supermercado", type: "expense" },
 
       // Alimentação Fora de Casa
-      { terms: ["restaurante", "lanchonete", "padaria", "bar", "pub", "cafe", "coffee", "ifood", "rappi", "uber eats", "burger", "mcdonalds", "pizza", "sushi", "açaí", "sorvete", "starbucks", "outback"], category: "Alimentação Fora de Casa" },
+      { terms: ["restaurante", "lanchonete", "padaria", "bar", "pub", "cafe", "coffee", "ifood", "rappi", "uber eats", "burger", "mcdonalds", "pizza", "sushi", "açaí", "sorvete", "starbucks", "outback"], category: "Alimentação Fora de Casa", type: "expense" },
 
       // Streaming e Assinaturas
-      { terms: ["netflix", "spotify", "youtube", "amazon prime", "disney", "hbo", "globoplay", "appletv", "paramount", "deezer", "assinatura", "adobe", "google one", "icloud"], category: "Streaming e Assinaturas" },
+      { terms: ["netflix", "spotify", "youtube", "amazon prime", "disney", "hbo", "globoplay", "appletv", "paramount", "deezer", "assinatura", "adobe", "google one", "icloud"], category: "Streaming e Assinaturas", type: "expense" },
 
       // Lazer
-      { terms: ["cinema", "ingresso", "show", "teatro", "museu", "parque", "clube", "steam", "playstation", "xbox", "nintendo", "jogo", "game", "sympla", "eventim"], category: "Lazer" },
+      { terms: ["cinema", "ingresso", "show", "teatro", "museu", "parque", "clube", "steam", "playstation", "xbox", "nintendo", "jogo", "game", "sympla", "eventim"], category: "Lazer", type: "expense" },
 
       // Despesa Fixa (Moradia/Contas)
-      { terms: ["aluguel", "condomínio", "luz", "energia", "enel", "light", "cpfl", "água", "sabesp", "gás", "iptu", "net", "vivo", "claro", "tim", "internet", "oi", "celular", "conta", "mensalidade"], category: "Despesa Fixa" },
+      { terms: ["aluguel", "condomínio", "luz", "energia", "enel", "light", "cpfl", "água", "sabesp", "gás", "iptu", "net", "vivo", "claro", "tim", "internet", "oi", "celular", "conta", "mensalidade"], category: "Despesa Fixa", type: "expense" },
 
       // Manutenção Residencial
-      { terms: ["leroy", "telhanorte", "manutenção", "conserto", "eletricista", "encanador", "limpeza", "faxina", "diarista", "c&c", "sodimac", "casa e construção"], category: "Manutenção Residencial" },
+      { terms: ["leroy", "telhanorte", "manutenção", "conserto", "eletricista", "encanador", "limpeza", "faxina", "diarista", "c&c", "sodimac", "casa e construção"], category: "Manutenção Residencial", type: "expense" },
 
       // Saúde
-      { terms: ["farmácia", "drogaria", "drogasil", "raia", "pague menos", "ultrafarma", "medicamento", "remédio", "médico", "consulta", "exame", "laboratório", "hospital", "dentista", "ortodontista", "psicólogo", "terapia", "plano de saúde", "unimed", "sulamerica", "bradesco saude"], category: "Saúde" },
+      { terms: ["farmácia", "drogaria", "drogasil", "raia", "pague menos", "ultrafarma", "medicamento", "remédio", "médico", "consulta", "exame", "laboratório", "hospital", "dentista", "ortodontista", "psicólogo", "terapia", "plano de saúde", "unimed", "sulamerica", "bradesco saude"], category: "Saúde", type: "expense" },
 
       // Educação
-      { terms: ["escola", "colégio", "faculdade", "universidade", "curso", "udemy", "alura", "coursera", "livro", "saraiva", "amazon", "papelaria", "material escolar", "idiomas", "inglês"], category: "Educação" },
+      { terms: ["escola", "colégio", "faculdade", "universidade", "curso", "udemy", "alura", "coursera", "livro", "saraiva", "amazon", "papelaria", "material escolar", "idiomas", "inglês"], category: "Educação", type: "expense" },
 
       // Vestuário
-      { terms: ["roupa", "vestuário", "sapato", "tênis", "camisa", "calça", "zara", "renner", "c&a", "riachuelo", "shein", "privalia", "dafiti", "nike", "adidas", "centauro"], category: "Vestuário" },
+      { terms: ["roupa", "vestuário", "sapato", "tênis", "camisa", "calça", "zara", "renner", "c&a", "riachuelo", "shein", "privalia", "dafiti", "nike", "adidas", "centauro"], category: "Vestuário", type: "expense" },
 
       // Seguros
-      { terms: ["seguro", "porto seguro", "azul seguros", "tokio marine", "allianz", "liberty", "suhai"], category: "Seguros" },
+      { terms: ["seguro", "porto seguro", "azul seguros", "tokio marine", "allianz", "liberty", "suhai"], category: "Seguros", type: "expense" },
 
       // Serviços Profissionais
-      { terms: ["advogado", "contador", "consultoria", "cartório", "despachante"], category: "Serviços Profissionais" },
+      { terms: ["advogado", "contador", "consultoria", "cartório", "despachante"], category: "Serviços Profissionais", type: "expense" },
 
       // Impostos e Taxas
-      { terms: ["iof", "tarifa", "anuidade", "juros", "taxa", "multa", "darf", "das", "irpf"], category: "Impostos e Taxas" },
+      { terms: ["iof", "tarifa", "anuidade", "juros", "taxa", "multa", "darf", "das", "irpf"], category: "Impostos e Taxas", type: "expense" },
 
       // Cartão de Crédito (Pagamento da fatura)
-      { terms: ["fatura", "cartão", "card", "visa", "mastercard", "amex", "nubank", "inter"], category: "Cartão de Crédito" },
+      { terms: ["fatura", "cartão", "card", "visa", "mastercard", "amex", "nubank", "inter"], category: "Cartão de Crédito", type: "expense" },
 
       // Compras Parceladas (Generic keyword match for installments if descriptive text implies it)
-      { terms: ["parcela", "1/", "2/", "3/", "4/", "5/", "6/", "7/", "8/", "9/", "10/", "11/", "12/"], category: "Compras Parceladas" },
+      { terms: ["parcela", "1/", "2/", "3/", "4/", "5/", "6/", "7/", "8/", "9/", "10/", "11/", "12/"], category: "Compras Parceladas", type: "expense" },
 
-      // --- RECEITAS ---
+      // --- RECEITAS (type: 'income') ---
 
       // Salário
-      { terms: ["salário", "holerite", "proventos", "folha"], category: "Salário" },
+      { terms: ["salário", "holerite", "proventos", "folha"], category: "Salário", type: "income" },
 
       // Freelance
-      { terms: ["freela", "serviço prestado", "job", "projeto"], category: "Freelance" },
+      { terms: ["freela", "serviço prestado", "job", "projeto"], category: "Freelance", type: "income" },
 
       // Reembolso
-      { terms: ["reembolso", "estorno", "devolução", "cashback"], category: "Reembolso" },
+      { terms: ["reembolso", "estorno", "devolução", "cashback"], category: "Reembolso", type: "income" },
 
       // Renda Extra
-      { terms: ["venda", "aluguel recebido", "lucro", "dividendo", "rendimento", "jcp"], category: "Renda Extra" },
+      { terms: ["venda", "aluguel recebido", "lucro", "dividendo", "rendimento", "jcp"], category: "Renda Extra", type: "income" },
     ];
   }
 
   classify(description, value) {
     const lowerDesc = description.toLowerCase();
 
-    // 1. Identify Income vs Expense based on Value Sign or Strong Keywords
-    // Note: Some exports show expenses as positive. We use heuristics.
-
-    let isIncome = false;
-
-    // Explicit Income Keywords (Override logic)
-    const incomeKeywords = ["salário", "recebido", "depósito recebido", "transferência recebida", "pix recebido", "resgate", "rendimento", "reembolso", "estorno", "cashback"];
-    if (incomeKeywords.some(term => lowerDesc.includes(term))) {
-      isIncome = true;
-    } else if (value > 0) {
-      // Heuristic: If valid positive number and not an obvious debt payment or installament reversal, assume Income.
-      // But be careful: "Estorno de compra" is positive (Income/Refund).
-      // "Pagamento Fatura" is negative.
-      // If the user pasted negative numbers for expenses, then Positive = Income.
-      isIncome = true;
-    }
-
-    // 2. Keyword Scoring for Expenses
-    let bestCategory = null;
+    // 1. Keyword Scoring
+    let bestMatch = null;
     let maxScore = 0;
 
     for (const set of this.dataset) {
       for (const term of set.terms) {
         if (lowerDesc.includes(term)) {
-          // Avoid matching short terms inside other words (e.g. "oi" in "boi")
-          // Simple hack: check boundaries if term is short
-          // For now, simple includes. Score by length.
+          // Score by length to prioritize more specific matches
           const score = term.length;
           if (score > maxScore) {
             maxScore = score;
-            bestCategory = set.category;
+            bestMatch = set;
           }
         }
       }
     }
 
-    // 3. Final Decision
-    if (bestCategory) {
-      return bestCategory;
+    // 2. Final Decision
+    if (bestMatch) {
+      return { category: bestMatch.category, type: bestMatch.type };
     }
 
-    // 4. Fallback
+    // 3. Fallback Heuristics if no keyword matched
+    let isIncome = false;
+
+    // Explicit Income Keywords (Override logic)
+    const incomeKeywords = ["salário", "recebido", "depósito recebido", "transferência recebida", "pix recebido", "resgate", "rendimento", "reembolso", "estorno", "cashback"];
+
+    if (incomeKeywords.some(term => lowerDesc.includes(term))) {
+      isIncome = true;
+    } else if (value > 0) {
+      // Heuristic: If positive value and no keywords, assume income.
+      // Note: This is weak if the user pastes expenses as positive numbers (which is common).
+      // But without keywords, we can't be sure.
+      // If the user pastes "Compra X 100", and 100 is positive, and "Compra X" matches nothing...
+      // We might assume it's "Outros Recebimentos". This might be wrong.
+      // However, usually "Expenses" have keywords like "Supermercado", etc.
+      // Let's stick to the original heuristic but return proper type.
+      isIncome = true;
+    }
+
     if (isIncome) {
-      return "Outros Recebimentos";
+      return { category: "Outros Recebimentos", type: "income" };
     } else {
-      return "Outros Gastos";
+      return { category: "Outros Gastos", type: "expense" };
     }
   }
 }
@@ -352,19 +368,68 @@ function renderTable() {
     return;
   }
 
-  expenses.forEach((expense) => {
+  expenses.forEach((expense, index) => {
     const row = document.createElement("tr");
+    const amountClass = expense.value < 0 ? "text-danger" : "text-success";
+
     row.innerHTML = `
       <td>${expense.date}</td>
       <td>${expense.description}</td>
-      <td><span class="badge text-bg-info">${expense.category}</span></td>
-      <td class="text-end">${formatCurrency(expense.value)}</td>
+      <td><span class="badge text-bg-secondary">${expense.category}</span></td>
+      <td class="text-end ${amountClass}">${formatCurrency(expense.value)}</td>
+      <td class="text-end">
+        <button class="btn btn-sm btn-outline-danger delete-btn" data-index="${index}" title="Remover item">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash3" viewBox="0 0 16 16">
+            <path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H2.506a.58.58 0 0 0-.01 0H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1h-.995a.59.59 0 0 0-.01 0zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47ZM8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/>
+          </svg>
+        </button>
+      </td>
     `;
     expensesTableBody.appendChild(row);
   });
 
+  // Attach event listeners to delete buttons
+  document.querySelectorAll(".delete-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const index = parseInt(e.currentTarget.dataset.index, 10);
+      deleteExpense(index);
+    });
+  });
+
   const total = expenses.reduce((sum, expense) => sum + expense.value, 0);
   totalValue.textContent = `Total: ${formatCurrency(total)}`;
+
+  renderChart();
+}
+
+function deleteExpense(index) {
+  if (index < 0 || index >= expenses.length) return;
+  expenses.splice(index, 1);
+  saveExpenses();
+  renderTable();
+  showToast("Item removido.", "success");
+}
+
+function generateCSV() {
+  let csv = "Data,Descrição,Categoria,Tipo,Valor\n";
+  expenses.forEach((item) => {
+    const desc = `"${item.description.replace(/"/g, '""')}"`;
+    const type = item.type === 'income' ? "Receita" : "Despesa";
+    // Standard CSV format
+    csv += `${item.date},${desc},${item.category},${type},${item.value.toFixed(2)}\n`;
+  });
+  return csv;
+}
+
+function downloadCSV(csvContent) {
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", "meus_gastos.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 function showToast(message, variant = "primary") {
@@ -389,8 +454,40 @@ function loadExpenses() {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) return [];
   try {
-    const parsed = JSON.parse(stored);
-    return Array.isArray(parsed) ? parsed : [];
+    let parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+
+    // Migration: Ensure types and correct signs
+    parsed = parsed.map(expense => {
+      let type = expense.type;
+
+      // Infer type if missing
+      if (!type) {
+        const match = classifier.dataset.find(d => d.category === expense.category);
+        if (match) {
+          type = match.type;
+        } else {
+          // Fallback based on category names or value
+          if (expense.category === "Outros Recebimentos" || expense.category === "Salário") {
+            type = "income";
+          } else {
+            type = "expense";
+          }
+        }
+      }
+
+      let value = expense.value;
+      // Enforce sign based on type
+      if (type === 'expense') {
+        value = -Math.abs(value);
+      } else if (type === 'income') {
+        value = Math.abs(value);
+      }
+
+      return { ...expense, type, value };
+    });
+
+    return parsed;
   } catch (error) {
     return [];
   }
@@ -406,3 +503,70 @@ function formatCurrency(value) {
     currency: "BRL",
   });
 }
+
+let chartInstance = null;
+
+function renderChart() {
+  const ctx = document.getElementById("expensesChart");
+  if (!ctx) return;
+
+  // Filter expenses only
+  const expenseItems = expenses.filter(e => e.type === 'expense');
+
+  // Aggregate by category
+  const categoryTotals = {};
+  expenseItems.forEach(item => {
+    const cat = item.category || "Outros";
+    const val = Math.abs(item.value);
+    categoryTotals[cat] = (categoryTotals[cat] || 0) + val;
+  });
+
+  const labels = Object.keys(categoryTotals);
+  const data = Object.values(categoryTotals);
+
+  // Simple palette
+  const backgroundColors = [
+    "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF", "#FF9F40",
+    "#E7E9ED", "#76D7C4", "#F7DC6F", "#F1948A", "#85C1E9", "#BB8FCE",
+    "#5D6D7E", "#58D68D", "#F5B041", "#DC7633", "#AF7AC5", "#5DADE2"
+  ];
+
+  if (chartInstance) {
+    chartInstance.destroy();
+  }
+
+  // If no data, we might want to show a message or just empty chart
+  if (labels.length === 0) {
+    // Optional: Clear canvas or show placeholder
+    return;
+  }
+
+  chartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: backgroundColors.slice(0, labels.length),
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+        },
+        title: {
+          display: true,
+          text: 'Distribuição de Gastos'
+        }
+      }
+    }
+  });
+}
+
+// Initial Load
+let expenses = loadExpenses();
+renderTable();

@@ -11,6 +11,7 @@
     crossorigin="anonymous"
   />
   <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-light">
   <header class="py-4 bg-white shadow-sm">
@@ -40,7 +41,17 @@
         ></textarea>
         <div class="d-flex flex-wrap gap-2 mt-3">
           <button id="processButton" class="btn btn-primary">Processar colagem</button>
+          <button id="exportButton" class="btn btn-outline-secondary">Exportar CSV</button>
           <button id="clearButton" class="btn btn-outline-danger">Limpar tudo</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card shadow-sm mb-4">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Resumo Visual</h2>
+        <div style="height: 300px; position: relative; width: 100%; display: flex; justify-content: center;">
+          <canvas id="expensesChart"></canvas>
         </div>
       </div>
     </section>
@@ -64,6 +75,7 @@
                 <th>Descrição</th>
                 <th>Categoria</th>
                 <th class="text-end">Valor (R$)</th>
+                <th class="text-end">Ações</th>
               </tr>
             </thead>
             <tbody></tbody>
